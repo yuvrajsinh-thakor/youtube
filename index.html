@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YouTube Multiview</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100%; height: 100%;
+    background: #0d0d0d;
+    color: #eaeaea;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    overflow: hidden;
+  }
+
+  /* ─── Setup screen ──────────────────────────────────── */
+  #setup {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 24px;
+    gap: 18px;
+  }
+  #setup h1 {
+    font-size: 28px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  #setup p.hint {
+    color: #888;
+    font-size: 13px;
+    max-width: 640px;
+    text-align: center;
+    line-height: 1.5;
+  }
+  #links {
+    width: 100%;
+    max-width: 720px;
+    height: 220px;
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 12px 14px;
+    color: #eaeaea;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    resize: vertical;
+    outline: none;
+  }
+  #links:focus { border-color: #4a90e2; }
+
+  .controls-row {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .controls-row label {
+    font-size: 13px;
+    color: #aaa;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .controls-row select,
+  .controls-row input {
+    background: #1a1a1a;
+    border: 1px solid #333;
+    color: #eaeaea;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 13px;
+    outline: none;
+  }
+
+  button.primary {
+    background: #4a90e2;
+    color: #fff;
+    border: 0;
+    border-radius: 8px;
+    padding: 12px 28px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  button.primary:hover { background: #3a7bc8; }
+  button.primary:disabled { background: #2a4a6a; cursor: not-allowed; }
+
+  button.secondary {
+    background: transparent;
+    color: #aaa;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  button.secondary:hover { color: #eaeaea; border-color: #555; }
+
+  /* ─── Multiview screen ──────────────────────────────── */
+  #multiview {
+    display: none;
+    width: 100vw;
+    height: 100vh;
+    padding-top: 32px;
+  }
+  #multiview.active { display: block; }
+  #setup.hidden { display: none; }
+
+  #bar {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 32px;
+    background: rgba(15,15,15,.95);
+    color: #eee;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    gap: 10px;
+    z-index: 999;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    border-bottom: 1px solid #222;
+  }
+  #bar button {
+    background: #222;
+    color: #eee;
+    border: 1px solid #333;
+    padding: 3px 10px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+    border-radius: 4px;
+  }
+  #bar button:hover { background: #333; }
+  #bar .status { color: #7fdd7f; margin-left: auto; }
+
+  #grid {
+    display: grid;
+    gap: 2px;
+    background: #000;
+    width: 100%;
+    height: calc(100vh - 32px);
+  }
+  .tile {
+    position: relative;
+    background: #000;
+    overflow: hidden;
+  }
+  .tile iframe, .tile > div {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    display: block;
+  }
+  .tile .label {
+    position: absolute;
+    bottom: 0; left: 0;
+    background: rgba(0,0,0,.7);
+    color: #fff;
+    font-size: 10px;
+    padding: 2px 5px;
+    pointer-events: none;
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    border-top-right-radius: 3px;
+  }
+  .tile.error { background: #1a0000; }
+  .tile.error .label { background: #600; }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════
+     SETUP SCREEN
+     ══════════════════════════════════════════════════════ -->
+<div id="setup">
+  <h1>YouTube Multiview</h1>
+  <p class="hint">
+    Paste YouTube links below — one per line. Supports
+    <code>youtube.com/watch?v=…</code>,
+    <code>youtu.be/…</code>,
+    <code>youtube.com/shorts/…</code>,
+    <code>youtube.com/live/…</code>,
+    or raw 11-character video IDs.
+  </p>
+
+  <textarea id="links" placeholder="https://www.youtube.com/watch?v=dQw4w9WgXcQ
+https://youtu.be/9bZkp7q19f0
+https://www.youtube.com/watch?v=kJQP7kiw5Fk"></textarea>
+
+  <div class="controls-row">
+    <label>
+      Tiles:
+      <select id="tileCount">
+        <option value="1">1</option>
+        <option value="4">4</option>
+        <option value="9">9</option>
+        <option value="16">16</option>
+        <option value="25">25</option>
+        <option value="36">36</option>
+        <option value="50" selected>50</option>
+      </select>
+    </label>
+    <label>
+      Columns:
+      <select id="columns">
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+        <option value="7">7</option>
+        <option value="10" selected>10</option>
+      </select>
+    </label>
+    <button class="secondary" onclick="loadExample()">Load example</button>
+  </div>
+
+  <button class="primary" id="startBtn" onclick="startMultiview()">
+    ▶ Start Multiview
+  </button>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     MULTIVIEW SCREEN
+     ══════════════════════════════════════════════════════ -->
+<div id="multiview">
+  <div id="bar">
+    <button onclick="pauseAll()">⏸ Pause</button>
+    <button onclick="playAll()">▶ Play</button>
+    <button onclick="muteAll()">🔇 Mute</button>
+    <button onclick="restart()">↺ Back</button>
+    <span class="status" id="status">loading…</span>
+  </div>
+  <div id="grid"></div>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════
+   1. VIDEO ID PARSER
+   Handles all common YouTube URL formats + raw IDs.
+   ══════════════════════════════════════════════════════════════ */
+function parseVideoIds(text) {
+  const ids = [];
+  const seen = new Set();
+
+  text.split(/\s+/).forEach(token => {
+    token = token.trim();
+    if (!token) return;
+
+    let id = null;
+
+    // Raw 11-char ID
+    if (/^[A-Za-z0-9_-]{11}$/.test(token)) {
+      id = token;
+    }
+    // Standard watch URL:  youtube.com/watch?v=XXXX
+    else {
+      try {
+        const url = new URL(token);
+        if (url.hostname.includes('youtube.com')) {
+          if (url.pathname === '/watch') {
+            id = url.searchParams.get('v');
+          } else if (url.pathname.startsWith('/shorts/')) {
+            id = url.pathname.split('/')[2];
+          } else if (url.pathname.startsWith('/live/')) {
+            id = url.pathname.split('/')[2];
+          } else if (url.pathname.startsWith('/embed/')) {
+            id = url.pathname.split('/')[2];
+          }
+        } else if (url.hostname === 'youtu.be') {
+          id = url.pathname.slice(1).split('/')[0];
+        }
+      } catch (e) { /* not a URL, ignore */ }
+    }
+
+    if (id && /^[A-Za-z0-9_-]{11}$/.test(id) && !seen.has(id)) {
+      seen.add(id);
+      ids.push(id);
+    }
+  });
+
+  return ids;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   2. YOUTUBE IFRAME API LOADER
+   ══════════════════════════════════════════════════════════════ */
+let apiReady = false;
+let apiWaiters = [];
+
+(function loadYTAPI() {
+  const tag = document.createElement('script');
+  tag.src = "https://www.youtube.com/iframe_api";
+  document.head.appendChild(tag);
+})();
+
+window.onYouTubeIframeAPIReady = function () {
+  apiReady = true;
+  apiWaiters.forEach(fn => fn());
+  apiWaiters = [];
+};
+
+function whenApiReady() {
+  return new Promise(resolve => {
+    if (apiReady) resolve();
+    else apiWaiters.push(resolve);
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════
+   3. STATE
+   ══════════════════════════════════════════════════════════════ */
+let players = [];
+let currentVideoIds = [];
+
+/* ══════════════════════════════════════════════════════════════
+   4. UI HELPERS
+   ══════════════════════════════════════════════════════════════ */
+function loadExample() {
+  document.getElementById('links').value =
+    "https://www.youtube.com/watch?v=dQw4w9WgXcQ\n" +
+    "https://youtu.be/9bZkp7q19f0\n" +
+    "https://www.youtube.com/watch?v=kJQP7kiw5Fk\n" +
+    "https://www.youtube.com/watch?v=JGwWNGJdvx8\n" +
+    "https://www.youtube.com/watch?v=RgKAFK5djSk";
+  saveToStorage();
+}
+
+function saveToStorage() {
+  try {
+    localStorage.setItem('mv_links', document.getElementById('links').value);
+    localStorage.setItem('mv_tiles', document.getElementById('tileCount').value);
+    localStorage.setItem('mv_cols',  document.getElementById('columns').value);
+  } catch (e) {}
+}
+
+function loadFromStorage() {
+  try {
+    const l = localStorage.getItem('mv_links');
+    const t = localStorage.getItem('mv_tiles');
+    const c = localStorage.getItem('mv_cols');
+    if (l) document.getElementById('links').value = l;
+    if (t) document.getElementById('tileCount').value = t;
+    if (c) document.getElementById('columns').value = c;
+  } catch (e) {}
+}
+
+/* ══════════════════════════════════════════════════════════════
+   5. START
+   ══════════════════════════════════════════════════════════════ */
+async function startMultiview() {
+  saveToStorage();
+
+  const raw = document.getElementById('links').value;
+  const ids = parseVideoIds(raw);
+
+  if (ids.length === 0) {
+    alert('No valid YouTube links found. Paste at least one link or video ID.');
+    return;
+  }
+
+  const tileCount = parseInt(document.getElementById('tileCount').value, 10);
+  const cols      = parseInt(document.getElementById('columns').value, 10);
+
+  // Cycle the IDs so we always fill `tileCount` tiles
+  currentVideoIds = [];
+  for (let i = 0; i < tileCount; i++) {
+    currentVideoIds.push(ids[i % ids.length]);
+  }
+
+  // Swap screens
+  document.getElementById('setup').classList.add('hidden');
+  document.getElementById('multiview').classList.add('active');
+
+  // Build grid
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+  grid.style.gridTemplateRows =
+    `repeat(${Math.ceil(tileCount / cols)}, 1fr)`;
+  players = [];
+
+  for (let i = 0; i < tileCount; i++) {
+    const tile = document.createElement('div');
+    tile.className = 'tile';
+    tile.id = 'tile-' + i;
+
+    const holder = document.createElement('div');
+    holder.id = 'player-' + i;
+    tile.appendChild(holder);
+
+    const label = document.createElement('div');
+    label.className = 'label';
+    label.id = 'label-' + i;
+    label.textContent = '#' + i + ' · ' + currentVideoIds[i];
+    tile.appendChild(label);
+
+    grid.appendChild(tile);
+  }
+
+  document.getElementById('status').textContent = 'loading…';
+
+  // Wait for API, then create players
+  await whenApiReady();
+  createPlayers();
+}
+
+function createPlayers() {
+  for (let i = 0; i < currentVideoIds.length; i++) {
+    const videoId = currentVideoIds[i];
+
+    const player = new YT.Player('player-' + i, {
+      videoId: videoId,
+      host: 'https://www.youtube-nocookie.com',
+      playerVars: {
+        autoplay:       1,
+        mute:           1,
+        controls:       0,
+        modestbranding: 1,
+        rel:            0,
+        playsinline:    1,
+        disablekb:      1,
+        fs:             0,
+        origin:         window.location.origin,
+      },
+      events: {
+        onReady: (e) => {
+          e.target.mute();
+          e.target.setVolume(0);
+          e.target.playVideo();
+        },
+        onStateChange: updateStatus,
+        onError: (e) => {
+          const tile = document.getElementById('tile-' + i);
+          if (tile) tile.classList.add('error');
+          const label = document.getElementById('label-' + i);
+          if (label) label.textContent = '#' + i + ' · error ' + e.data;
+        },
+      },
+    });
+
+    players.push(player);
+  }
+
+  // Poll status every 2 s in case onStateChange is missed
+  setInterval(updateStatus, 2000);
+  updateStatus();
+}
+
+function updateStatus() {
+  let playing = 0;
+  let ready = 0;
+  for (const p of players) {
+    if (!p || typeof p.getPlayerState !== 'function') continue;
+    try {
+      const s = p.getPlayerState();
+      if (s === YT.PlayerState.PLAYING) playing++;
+      if (s === YT.PlayerState.PLAYING ||
+          s === YT.PlayerState.PAUSED  ||
+          s === YT.PlayerState.BUFFERING) ready++;
+    } catch (e) {}
+  }
+  document.getElementById('status').textContent =
+    `${playing} / ${players.length} playing`;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   6. TOOLBAR ACTIONS
+   ══════════════════════════════════════════════════════════════ */
+function playAll() {
+  players.forEach(p => { try { p.mute(); p.playVideo(); } catch (e) {} });
+}
+function pauseAll() {
+  players.forEach(p => { try { p.pauseVideo(); } catch (e) {} });
+}
+function muteAll() {
+  players.forEach(p => { try { p.mute(); p.setVolume(0); } catch (e) {} });
+}
+function restart() {
+  // Destroy players cleanly
+  players.forEach(p => { try { p.destroy(); } catch (e) {} });
+  players = [];
+  document.getElementById('grid').innerHTML = '';
+  document.getElementById('multiview').classList.remove('active');
+  document.getElementById('setup').classList.remove('hidden');
+}
+
+/* ══════════════════════════════════════════════════════════════
+   7. INIT
+   ══════════════════════════════════════════════════════════════ */
+loadFromStorage();
+</script>
+
+</body>
+</html>
